@@ -19,12 +19,6 @@ octoprint_address = 'https://octopi.local'
 api_key = '{put octopi api key here}'
 
 def make_client(url, apikey):
-     """Creates and returns an instance of the OctoRest client.
-
-     Args:
-         url - the url to the OctoPrint server
-         apikey - the apikey from the OctoPrint server found in settings
-     """
      try:
          client = OctoRest(url=url, apikey=apikey)
          return client
@@ -105,7 +99,6 @@ def listen_and_transcribe():
 
             if TRIGGER_PHRASE.lower() in transcription.lower():
                 print(f"Trigger phrase '{TRIGGER_PHRASE}' detected!")
-                # Add your desired action here
                 sentence = transcription.lower()
                 nouns = extract_nouns(sentence)
                 print(nouns)
