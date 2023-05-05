@@ -12,13 +12,16 @@ from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from urllib3.exceptions import InsecureRequestWarning
 
+#import everything
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
+#disable ssl warhing
 octoprint_address = 'https://octopi.local'
 api_key = '{put octopi api key here}'
 
 def make_client(url, apikey):
+     #makes client
      try:
          client = OctoRest(url=url, apikey=apikey)
          return client
@@ -28,7 +31,7 @@ def make_client(url, apikey):
 
 
 def print_gcode_file(filename, octoprint_address, api_key):
-
+#prints file from name
     filename = filename + ".gcode"
     
     folder_path = "models/"
@@ -58,7 +61,7 @@ def print_gcode_file(filename, octoprint_address, api_key):
     octo.tool_target(230)
     
 
-
+#sentence processing
 def extract_nouns(sentence):
     sentence = sentence.replace('Hey Jarvis', '')
     
@@ -69,18 +72,20 @@ def extract_nouns(sentence):
     
     return nouns[2]
 
+#adds a buffer stream to analyze in chunks
 openai.api_key = '{put openai api key here}'
 
 BUFFER_DURATION = 5  
 TRIGGER_PHRASE = 'hey jarvis'
 REQUEST_DELAY = 1 
-
+#uses whisper to transcribe audio
 def transcribe_whisper(audio_file_path):
     with open(audio_file_path, "rb") as audio_file: 
         transcript = openai.Audio.transcribe("whisper-1", audio_file)
     print(transcript)
     return transcript["text"]
 
+#run the listener
 def listen_and_transcribe():
     recognizer = sr.Recognizer()
 
