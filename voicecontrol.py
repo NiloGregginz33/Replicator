@@ -197,7 +197,7 @@ def listen_and_transcribe():
                 sentence = transcription.lower()
                 nouns = get_noun_phrase_complement(sentence)
                 print(nouns)
-                files = download_stl(nouns, octoprint_address, api_key)
+                files = download_stl(nouns, octoprint_address, api_key, access_token)
 
                 
 if __name__ == "__main__":
