@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <style>
+        body {
+            background-color: #2E2E2E; /* steel gray */
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            margin: 50px auto;
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 {
+            color: #000080; /* navy blue */
+        }
+        input, button {
+            padding: 10px;
+            margin: 10px;
+            border-radius: 5px;
+            border: none;
+        }
+        button {
+            background-color: #000000; /* black */
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #444444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>3D Print Job Generator</h1>
+        <form id="generate-form">
+            <input type="text" id="prompt" placeholder="Enter prompt" required>
+            <button type="submit">Generate G-code</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('generate-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const prompt = document.getElementById('prompt').value;
+            fetch('/generate_gcode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': 'hVpVIT9G5WqmX3bxSzHyi3gxWIc75owA3Vai5egWKxG4Ekd5mMieYA5BA5pTlD46Ubs1byN1V8bhdQBQNnag61hAvTrROLcRHEzVUmqbp8y948vG8uMd1HLJqkNK6Z5q'
+                },
+                body: JSON.stringify({ prompt })
+            }).then(response => response.json())
+            .then(data => {
+                alert('G-code generation started.');
+                window.location.href = '/status.html?prompt=' + encodeURIComponent(prompt);
+            }).catch(error => {
+                alert('Error: ' + error.message);
+            });
+        });
+    </script>
+</body>
+</html>

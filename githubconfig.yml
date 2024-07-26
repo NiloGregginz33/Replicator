@@ -1,0 +1,8 @@
+authtoken: {INSERT YOUR NGROK AUTH TOKEN HERE}
+tunnels:
+  http-5000:
+    proto: http
+    addr: 5000
+  http-4000:
+    proto: http
+    addr: 4000

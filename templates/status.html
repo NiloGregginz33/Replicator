@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status</title>
+    <style>
+        body {
+            background-color: navy;
+            color: gray;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            text-align: center;
+        }
+        .video {
+            border: 5px solid gray;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Status Page</h1>
+        <div id="video-container">
+            <!-- Video feed will be embedded here -->
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const apiKey = "{{ api_key }}";
+            const videoContainer = document.getElementById('video-container');
+            const img = document.createElement('img');
+            img.src = `{{ url_for('video_feed') }}?api_key=${apiKey}`;
+            img.className = "video";
+            videoContainer.appendChild(img);
+        });
+    </script>
+</body>
+</html>
