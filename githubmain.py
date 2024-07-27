@@ -298,34 +298,6 @@ def scale_obj_file(input_filepath, output_filepath, scale_factor=60.0, target_si
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def generate_gcode(vertices, faces, layer_height=0.2, extrusion_width=0.4, feed_rate=1200):
-    min_z = np.min(vertices[:, 2])
-    max_z = np.max(vertices[:, 2])
-    current_z = min_z
-    gcode_lines = ["G21 ; Set units to millimeters", "G90 ; Absolute positioning", "G1 E10 F100 ; Prime extruder"]
-
-    while current_z <= max_z:
-        layer_vertices = vertices[np.abs(vertices[:, 2] - current_z) < layer_height / 2]
-        if len(layer_vertices) == 0:
-            current_z += layer_height
-            continue
-
-        # Sort vertices to create a simple path
-        layer_vertices = layer_vertices[np.argsort(layer_vertices[:, 0])]
-        
-        gcode_lines.append(f"G1 Z{current_z:.3f} F{feed_rate}")
-
-        for i, vertex in enumerate(layer_vertices):
-            x, y, z = vertex
-            if i == 0:
-                gcode_lines.append(f"G1 X{x:.3f} Y{y:.3f} F{feed_rate}")
-            else:
-                gcode_lines.append(f"G1 X{x:.3f} Y{y:.3f} E{extrusion_width}")
-
-        current_z += layer_height
-
-    return "\n".join(gcode_lines)
-
 def obj_to_gcode(obj_file_path, output_gcode_path,  prompt, slic3r_path, profile_path, output_filename = "sliced_obj.obj"):
     slic3r_path = r'{INSERT FULL PATH TO SLIC3R}'
     # Update the path based on your installation
