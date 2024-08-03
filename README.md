@@ -6,4 +6,7 @@ This replicator was inspired by Star Trek and a desire to literally "speak" some
 4. pip install -r requirements.txt
 5. python setup.py (use tje api from step 3 as your input for the 2nd prompt)
 6. python main.py
-7. It should now work!
+7. Set up config for ngrok (I believe it's ngrok start --config=config.yml example)
+8. flask run --host=0.0.0.0 --port=5000
+9. ngrok http -hostname=example.ngrok-free.app 5000
+10. Pat yourself on the back! It should work, if not, leave the bug and I will try to fix
