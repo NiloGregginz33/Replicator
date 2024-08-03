@@ -1,9 +1,9 @@
 # Replicator
-proof of concept for a star trek replicator, other tests need to be performed. A replicator in the show could make anything from a simple verbal command to quite literally speak something into existence.
-In order to use this, a printer capable of running moonraker and capable of using wifi/lan. The first step to use this is to root your 3D printer and install moonraker. Several guides exist, and I wont discuss them here as it depends on the model of printer you have. Second step is to set up an ngrok account. Thirdly, you'll need to install shap-e into this directory as well as install the requirements.txt files. Next you'll want to configure your code so that all the relavent details are there such as your 3d printer ip and config settings. After this, make sure to remove "github" from the file names, I simply renamed them so I dont get confused. Finally, to get it voice activated simply use a ios shortcut to curl the generate_gcode_flask function and open url for the status endpoint. Make sure to include the appropirate headers and for the open url just pass the api key as an arg in the url.
-
-
-BUGS THAT I EXPERIENCED THAT MIGHT HELP (W HARDWARE):
-filament kept breaking in extruder - make sure config is ok
-printer cant find wifi - wait it out and see if it shows up on LAN anyways
-
+This replicator was inspired by Star Trek and a desire to literally "speak" something into existence. The procedure on how to use this app is pretty straight forward. Note: Do Not Attempt with Filaments other than PLA without changing the appropriate temp settings.
+1. Root your 3D printer and install moonraker (fluidd is also recommended)
+2. Git clone this repository
+3. Install ngrok, go to dashboard to find api key
+4. pip install -r requirements.txt
+5. python setup.py (use tje api from step 3 as your input for the 2nd prompt)
+6. python main.py
+7. It should now work!
