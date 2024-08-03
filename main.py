@@ -9,7 +9,7 @@ import json
 import subprocess
 import socket
 import trimesh
-from flask import Flask, request, jsonify, abort, Response, render_template
+from flask import Flask, request, jsonify, abort, Response, render_template, send_from_directory, session
 from flask_ngrok import run_with_ngrok
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -29,7 +29,22 @@ from shap_e.diffusion.sample import sample_latents
 from shap_e.diffusion.gaussian_diffusion import diffusion_from_config
 from shap_e.models.download import load_model, load_config
 from shap_e.util.notebooks import create_pan_cameras, decode_latent_images, decode_latent_mesh
+import speech_recognition as sr
 
+def read_keys_from_file(filename='secret_k.txt'):
+    secret_key = api_key = local_key = None
+    with open(filename, 'r') as f:
+        for line in f:
+            key, value = line.strip().split('=')
+            if key == 'app.secret_key':
+                secret_key = value
+            elif key == 'api_key':
+                api_key = value
+            elif key == 'local_key':
+                local_key = value
+    return secret_key, api_key, local_key
+
+secret_key, api_key, the_local_key = read_keys_from_file()
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -39,31 +54,38 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
-# Add the shap-e directory to the Python path
 shap_e_path = os.path.join(os.path.dirname(__file__), 'shap-e')
 sys.path.append(shap_e_path)
 
-ip = "{INSERT YOUR LOCAL PRINTER IP"
+ip = "192.168.10.231"
 MOONRAKER_IP = f'http://{ip}:7125'
 HEADERS = {'Content-Type': 'application/json'}
 port = 7125
+gcode_thread = None
+cancel_flag = threading.Event()
+
+IMAGE_DIR = 'static\images'
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+base_dir = 'images'
 
 generation_status = {
     "status": "not_started",
     "percentage": 0,
     "images": []
 }
+current_prompt = ''
 
 app = Flask(__name__)
 
-API_KEY = "{INSERT YOUR NGROK AUTH KEY}"
-local_key = "{INSERT ANY SECURE STRING HERE FOR YOUR OWN API TOKEN SO OTHER PEOPLE DONT USE YOUR STUFF"
-
+app.secret_key = secret_key
+API_KEY = api_key
+local_key = the_local_key
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-    
-folder_name = "gcode"
+
+folder_name = "gcodes"
 
 if not os.path.exists(folder_name):
     os.makedirs(folder_name)
@@ -71,6 +93,31 @@ if not os.path.exists(folder_name):
 else:
     print(f"Folder '{folder_name}' already exists.")
 
+if not os.path.exists(IMAGE_DIR):
+    os.makedirs(IMAGE_DIR)
+    print(f"Folder '{IMAGE_DIR}' created.")
+else:
+    print(f"Folder '{IMAGE_DIR}' already exists.")
+
+def check_auth(username, password):
+    return username == USERNAME and password == PASSWORD
+
+def authenticate():
+    return Response(
+        'Could not verify your access level for that URL.\n'
+        'You have to login with proper credentials', 401,
+        {'WWW-Authenticate': 'Basic realm="Login Required"'})
+
+def create_path(subdirectory, filename):
+    current_directory = os.getcwd()
+    subdirectory_path = os.path.join(current_directory, subdirectory)
+    file_path = os.path.join(subdirectory_path, filename) 
+    return file_path
+
+def get_full_path(filename):
+    current_directory = os.getcwd()   
+    full_path = os.path.join(current_directory, filename)
+    return full_path
 
 def detect_floating_parts(mesh, min_component_size=50):
     components = mesh.split(only_watertight=False)
@@ -143,7 +190,6 @@ def bind_floating_parts(input_filepath, output_filepath):
 
     merged_mesh.export(output_filepath)
 
-
 def start_ngrok():
     os.environ["NGROK_CONFIG"] = "ngrok.yml"
     public_url = ngrok.connect(5000, "http")
@@ -156,10 +202,10 @@ def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.headers.get('x-api-key') or request.args.get('api_key')
-        if api_key or api_key == local_key:
+        if api_key == local_key:
             return f(*args, **kwargs)
         else:
-            abort(401)
+            abort(403)
     return decorated_function
         
 def get_temperature():
@@ -171,6 +217,7 @@ def get_temperature():
     else:
         print(f"Failed to retrieve temperature info: {response.content}")
 
+        
 def wait_for_temperature(target_temp, target_bed_temp, timeout=420):
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -188,28 +235,25 @@ def wait_for_temperature(target_temp, target_bed_temp, timeout=420):
     print("Timeout reached before temperatures were met.")
     return False
     
-# Function to set seed for reproducibility
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+        torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
 def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0, render_mode='nerf', size=32):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(random.randint(0, 10000000))
-    # Load models and configurations
     xm = load_model('transmitter', device=device)
     model = load_model('text300M', device=device)
     diffusion = diffusion_from_config(load_config('diffusion'))
     slic3r_path = "prusa3d.exe"
     profile_path = "config.ini"
 
-    # Sample latents
     latents = sample_latents(
         batch_size=batch_size,
         model=model,
@@ -226,40 +270,49 @@ def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0
         s_churn=0,
     )
 
-    image_dir = os.path.join('images', prompt.replace(" ", "_"))
-    os.makedirs(image_dir, exist_ok=True)
+    intermediate_dir = 'intermediate_gcodes'
+    if not os.path.exists(intermediate_dir):
+        os.makedirs(intermediate_dir)
 
-    # Create cameras and render images
+    prompt_folder = prompt.replace(" ", "_")
+    prompt_dir = os.path.join(intermediate_dir, prompt_folder)
+    if not os.path.exists(prompt_dir):
+        os.makedirs(prompt_dir)
+
+    halfway_gcode_path = os.path.join(prompt_dir, f'{prompt.replace(" ", "_")}_halfway.obj')
+
+    image_dir = os.path.join(IMAGE_DIR, prompt.replace(" ", "_"))
+    os.makedirs(image_dir, exist_ok=True)
+    image_paths = []
+
+    prompt_dir = os.path.join(base_dir, prompt.replace(' ','_'))
+    os.makedirs(prompt_dir, exist_ok=True)
+
     cameras = create_pan_cameras(size, device)
     for i, latent in enumerate(latents):
         images = decode_latent_images(xm, latent, cameras, rendering_mode=render_mode)
-        # Save the first image of each latent as PNG
         for j, image in enumerate(images):
-            image_path = os.path.join(image_dir, f'image_{i}_{j}.png')
+            image_path = os.path.join(image_dir, f'{prompt.replace(" ", "_")}_image_{i}_{j}.png')
             image.save(image_path)
+            image_paths.append(image_path)
+            generation_status["images"].append(f'/static/images/{prompt.replace(" ", "_")}/{prompt.replace(" ","_")}_image_{i}_{j}.png')
             print(f"Saved {image_path}")
 
-    # Save the latents as meshes and convert to G-code
     gcode_dir = os.path.join(os.path.dirname(output_gcode_path), 'gcodes')
     os.makedirs(gcode_dir, exist_ok=True)
     gcode_path = os.path.join(gcode_dir, f'{prompt.replace(" ", "_")}.gcode')
     
-    
-    for i, latent in enumerate(latents):
-        base = f'{prompt.replace(" ", "_")}_repaired.gcode'
-        
+    for i, latent in enumerate(latents):        
         t = decode_latent_mesh(xm, latent).tri_mesh()
-        obj_path = f'{prompt.replace(" ", "_")}_{i}.obj'
+        obj_path = os.path.join(prompt_dir, f'{prompt.replace(" ", "_")}_{i}.obj')
         print("creating mesh...")
         with open(obj_path, 'w') as f:
             t.write_obj(f)
         print(f"Saved {obj_path}")
         
-        # Convert OBJ to G-code
-        
         obj_path_1 = f'{prompt.replace(" ", "_")}_halfway.obj'
-        bind_floating_parts(obj_path, obj_path_1)
-        obj_to_gcode(obj_path_1, gcode_path, prompt, slic3r_path, profile_path)
+        bind_floating_parts(obj_path, halfway_gcode_path)
+        obj_to_gcode(halfway_gcode_path, gcode_path, prompt, slic3r_path, profile_path)
         
         print(f"Saved G-code to {gcode_path}")
     
@@ -269,7 +322,6 @@ def scale_obj_file(input_filepath, output_filepath, scale_factor=60.0, target_si
     try:
         start_time = time.time()
         
-        # Load the OBJ file
         print("Loading OBJ file...")
         mesh = trimesh.load(input_filepath)
         load_time = time.time()
@@ -280,13 +332,11 @@ def scale_obj_file(input_filepath, output_filepath, scale_factor=60.0, target_si
 
         target_scale = (target_size_cm * 10) / max_extent
         
-        # Scale the vertices of the mesh
         print("Scaling the mesh...")
         mesh.apply_scale(target_scale)
         scale_time = time.time()
         print(f"Mesh scaled in {scale_time - load_time:.2f} seconds.")
         
-        # Export the scaled mesh to a new OBJ file
         print("Exporting the scaled mesh to OBJ file...")
         mesh.export(output_filepath)
         export_time = time.time()
@@ -295,29 +345,26 @@ def scale_obj_file(input_filepath, output_filepath, scale_factor=60.0, target_si
         print(f"Successfully scaled {input_filepath} by {scale_factor} and saved to {output_filepath}")
         total_time = time.time()
         print(f"Total execution time: {total_time - start_time:.2f} seconds.")
+        
     except Exception as e:
         print(f"An error occurred: {e}")
 
 def obj_to_gcode(obj_file_path, output_gcode_path,  prompt, slic3r_path, profile_path, output_filename = "sliced_obj.obj"):
-    slic3r_path = r'{INSERT FULL PATH TO SLIC3R}'
-    # Update the path based on your installation
-    profile_path = r'{INSERT FULL PATH TO CONFIG HERE}'
+    slicer_path = create_path('slic3r', 'Slic3r.exe')
+    prof_path = get_full_path('config.ini')
     ouput = os.path.join("gcodes", f"{prompt.replace(' ', '_')}.gcode")
     filepath = "sliced_obj.obj"
     
     scale_obj_file(obj_file_path, output_filename)
-    # Construct the command for Slic3r
     command = [
-        slic3r_path,
-        '--load', profile_path,  # Load the slicing profile
+        slicer_path,
+        '--load', prof_path,
         '--output', output_gcode_path,
         '--support-material',
-        '--no-gui',# Output G-code file
-        filepath  # Input OBJ file       
-        # Enable support material
+        '--no-gui',
+        filepath     
     ]
 
-    # Print the command to debug
     print("Running command:", " ".join(command))
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -327,8 +374,7 @@ def obj_to_gcode(obj_file_path, output_gcode_path,  prompt, slic3r_path, profile
             if output == '' and process.poll() is not None:
                 break
             if output:
-                # Extract the progress percentage from the output
-                print(output.strip())  # Print raw output for debugging
+                print(output.strip())
                 match = re.search(r'(\d+)%', output)
                 if match:
                     percent_done = match.group(1)
@@ -383,7 +429,6 @@ def send_gcode_batch(printer_ip, port, commands, batch_size=10):
                 except requests.exceptions.RequestException as e:
                     print("Failed batch: {e}")
 
-
     except Exception as e:
         responses.append(f"An error occurred: {e}")
 
@@ -395,50 +440,31 @@ def join_with_current_path(relative_path):
     return combined_path
 
 def split_gcode_file(filepath, prompt):
-    # List to hold the G-code commands
     gcode_commands = []
 
     filepath = normalize_path(filepath)
     path = f'gcodes\\{prompt.replace(" ","_")}.gcode'
 
-    # Read the G-code file
     with open(path, 'r') as file:
         for line in file:
-            # Strip any leading/trailing whitespace characters
             command = line.strip()
-            # Ignore empty lines and comments
             if command and not command.startswith(';'):
                 gcode_commands.append(command)
 
     return gcode_commands
 
 def normalize_path(path):
-    # Convert the path to a string (if it's not already)
     path_str = str(path)
-    normalized_path = path_str.replace('\\', '/')
-    
+    normalized_path = path_str.replace('\\', '/')   
     return normalized_path
-
 
 def convert_obj_to_stl(obj_filepath, stl_filepath):
     try:
-        # Load the OBJ file
         mesh = trimesh.load(obj_filepath)
-        
-        # Export the mesh to an STL file
         mesh.export(stl_filepath)
         print(f"Successfully converted {obj_filepath} to {stl_filepath}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
-def warm_up():
-    base_url = f"http://{ip}"
-    try:
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S265"})  # Set extruder temperature
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})  # Set bed temperature
-        print("Extruder and bed temperatures set successfully.")
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to set temperatures: {e}")
 
 def gen_frames():
     camera = cv2.VideoCapture(0)
@@ -452,17 +478,56 @@ def gen_frames():
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
+def print_function(commands, ip=ip, port=port):
+    base_url = f"http://{ip}:7125"
+    try:
+        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S230"})  # Set extruder temperature
+        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})  # Set bed temperature
+        print("Extruder and bed temperatures set successfully.")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to set temperatures: {e}")
+    time.sleep(10)
+    get_temperature()
+    if wait_for_temperature(229,99):
+        thread = threading.Thread(target=send_gcode_batch, args=(ip, port, commands,))
+        thread.start()
+        thread.join()
+    else:
+        print("printer failed to heat")
+    
+def run_flask():
+    app.run(port=5000)
+    
 @app.route('/video_feed')
 @require_api_key
 def video_feed():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/status')
+@app.route('/get_status')
 @require_api_key
-def status():
+def get_status():
     return render_template('status.html', api_key=local_key)
 
+@app.route('/generation_status', methods=['GET'])
+@require_api_key
+def get_generation_status():
+    global generation_status
+    prompt = session.get('prompt')
+    sanitized_prompt = session.get('sanitized_prompt')
+    status = generation_status["status"]
+    images = generation_status["images"]
+    timestamp = int(time.time())
+    image_paths = [f"{image}?timestamp={timestamp}" for image in images]
+
+    return jsonify({"status": status, "images": image_paths})
+
+@app.route('/static/images/<prompt>/<path:filename>')
+@require_api_key
+def serve_generated_image(prompt, filename):
+    return send_from_directory(os.path.join(IMAGE_DIR, prompt.replace(' ','_')), filename)
+
 @app.before_request
+@require_api_key
 def log_request_info():
     logger.info('Headers: %s', request.headers)
     logger.info('Body: %s', request.get_data())
@@ -474,11 +539,21 @@ def homebase():
     
 @app.route('/generate_gcode', methods=['POST'])
 @require_api_key
-def generate_gcode_flask():    
+def generate_gcode_flask():
+    global gcode_thread, cancel_flag, generation_status
     data = request.get_json()
-    base_url = f"http://{ip}:7125"
+    base_url = f"{MOONRAKER_IP}"
     print(data["prompt"])
     prompt = data["prompt"]
+    sanitized_prompt = prompt.replace(' ','_')
+
+    session["prompt"] = prompt
+    session["sanitized_prompt"] = sanitized_prompt
+
+    images_precursor = []
+    for x in range(0, 20):
+        image_name = f"image_0_{x}.png"
+        images_precursor.append(image_name)
     
     print(f"data: {data}", sys.stderr)
     if not data or 'prompt' not in data:
@@ -490,7 +565,9 @@ def generate_gcode_flask():
 
     path = join_with_current_path(relative_path)
 
-    def generate_gcode():
+    generation_status["status"] = "in_progress"
+
+    def generate_gcode():        
         gcode_path = prompt_to_gcode(prompt, output_gcode_path)
         commands = split_gcode_file(gcode_path, prompt)
         try:
@@ -500,7 +577,6 @@ def generate_gcode_flask():
         except requests.exceptions.RequestException as e:
             print(f"Failed to set temperatures: {e}")
 
-        # Send G-code commands in batches
         time.sleep(2)
         get_temperature()
         initial_commands = [
@@ -514,53 +590,34 @@ def generate_gcode_flask():
             "G92 E0 ; Reset extruder position",
             "G1 E10 F100 ; Prime the extruder"
         ]
-        # Combine initial commands with the actual print commands
         
         full_commands = initial_commands + commands
-        print_function(full_commands)
+        for command in full_commands:
+            if cancel_flag.is_set():
+                print("Cancellation requested. Stopping G-code generation.")
+                generation_status["status"] = "cancelled"
+                break
+            print_function([command])
 
-    threading.Thread(target=generate_gcode).start()
+        generation_status["status"] = "completed"
+            
+    cancel_flag.clear()
+    gcode_thread = threading.Thread(target=generate_gcode)
+    gcode_thread.start()
 
     return '', 204
 
-
-@app.route('/process_text', methods=['POST'])
+@app.route('/cancel_print', methods=['POST'])
 @require_api_key
-def process_text():
-    data = request.get_json()
-    if not data or 'text' not in data:
-        logger.error('No text provided in request')
-        return jsonify({'error': 'No text provided'}), 400
+def cancel_print():
+    global cancel_flag, generation_status
+    generation_status["images"] = []
 
-    text = data['text']
-    # Log the received text
-    logger.info(f"Received text: {text}")
-    print(f"{text}", file=sys.stderr)
-
-    # Respond with a confirmation message
-    return jsonify({'message': f'Text received: {text}'}), 200
-
-    
-def print_function(commands, ip=ip, port=port):
-    base_url = f"http://{ip}:7125"
-    try:
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S230"})  # Set extruder temperature
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})  # Set bed temperature
-        print("Extruder and bed temperatures set successfully.")
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to set temperatures: {e}")
-    # Send G-code commands in batches
-    time.sleep(10)
-    get_temperature()
-    if wait_for_temperature(229,99):
-        thread = threading.Thread(target=send_gcode_batch, args=(ip, port, commands,))
-        thread.start()
-        thread.join()
+    if gcode_thread and gcode_thread.is_alive():
+        cancel_flag.set()
+        return jsonify({'status': 'Cancellation requested'}), 200
     else:
-        print("printer failed to heat")
-    
-def run_flask():
-    app.run(port=5000)
+        return jsonify({'error': 'No running print job to cancel'}), 400
 
 if __name__ == "__main__":
     ngrok_thread = threading.Thread(target=start_ngrok)
