@@ -4,7 +4,7 @@ This replicator was inspired by Star Trek and a desire to literally "speak" some
 2. Git clone this repository
 3. Install ngrok, go to dashboard to find api key
 4. pip install -r requirements.txt
-5. python setup.py (use tje api from step 3 as your input for the 2nd prompt)
+5. python setup.py (use the api from step 3 as your input for the 2nd prompt)(DO NOT WORRY if program doesnt execute all the way, it has still done what it needs to)
 6. python main.py
 7. Set up config for ngrok (I believe it's ngrok start --config=config.yml example)
 8. Set up config for slicer for whatever material by exporting/overwriting your slicer config into config.ini
