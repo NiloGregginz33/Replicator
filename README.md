@@ -12,6 +12,6 @@ This replicator was inspired by Star Trek and a desire to literally "speak" some
 10. ngrok http -hostname=example.ngrok-free.app 5000
 11. Shortcuts: use the Get_contents_of_url/Open url or android macro equal. I will only provide the ios version here.
 ![image_shortcut_1](https://github.com/user-attachments/assets/c32d0c29-251c-4c04-95f1-1543514d6ea6)
-![image_shortcut_2]https://github.com/user-attachments/assets/196af37f-f867-4e2e-a896-56ec7d034796)
+![image_shortcut_2](https://github.com/user-attachments/assets/196af37f-f867-4e2e-a896-56ec7d034796)
 ![image_shortcut_3](https://github.com/user-attachments/assets/7a0cd613-c1ec-403c-9e41-8bd48687fe28)
 
