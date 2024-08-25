@@ -3,7 +3,7 @@ This replicator was inspired by Star Trek and a desire to literally "speak" some
 1. Root your 3D printer and install moonraker (fluidd is also recommended)
 2. Git clone this repository
 3. Install ngrok, go to dashboard to find api key
-4. pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --upgrade --force-reinstall | pip install -r requirements.txt (idk why torch doesnt download otherwise)
+4. PIP COMMANDS (run seperately and in order): pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --upgrade --force-reinstall | pip install wheel | pip install -r requirements.txt (idk why torch doesnt download otherwise)
 5. python setup.py (use the api from step 3 as your input for the 2nd prompt)(DO NOT WORRY if program doesnt execute all the way, it has still done what it needs to)
 6. python main.py
 7. Set up config for ngrok (I believe it's ngrok start --config=config.yml example | you might need to open multiple terminals in this directory)
