@@ -31,7 +31,7 @@ from shap_e.util.notebooks import create_pan_cameras, decode_latent_images, deco
 import speech_recognition as sr
 
 def read_keys_from_file(filename='secret_k.txt'):
-    secret_key = api_key = local_key = None
+    secret_key = api_key = local_key = local_ip = None
     with open(filename, 'r') as f:
         for line in f:
             key, value = line.strip().split('=')
@@ -41,9 +41,11 @@ def read_keys_from_file(filename='secret_k.txt'):
                 api_key = value
             elif key == 'local_key':
                 local_key = value
-    return secret_key, api_key, local_key
+            elif key == 'local_ip':
+                local_ip = value
+    return secret_key, api_key, local_key, local_ip
 
-secret_key, api_key, the_local_key = read_keys_from_file()
+secret_key, api_key, the_local_key, local_ip = read_keys_from_file()
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -56,7 +58,7 @@ root.addHandler(handler)
 shap_e_path = os.path.join(os.path.dirname(__file__), 'shap-e')
 sys.path.append(shap_e_path)
 
-ip = "192.168.10.231"
+ip = f"{local_ip}"
 MOONRAKER_IP = f'http://{ip}:7125'
 HEADERS = {'Content-Type': 'application/json'}
 port = 7125
