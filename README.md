@@ -1,5 +1,5 @@
 # Replicator
-This replicator was inspired by Star Trek and a desire to literally "speak" something into existence. The procedure on how to use this app is pretty straight forward. Note: Do Not Attempt with Filaments other than PLA without changing the appropriate temp config. Please install python and git beforehand, and consider using a virtual environment.
+This replicator was inspired by Star Trek and a desire to literally "speak" something into existence. The procedure on how to use this app is pretty straight forward. Note: Do Not Attempt with Filaments other than PLA without changing the appropriate temp config. Please install python 3.9/3.10 and git beforehand, and consider using a virtual environment if this is not your default python version.
 1. Root your 3D printer and install moonraker (fluidd is also recommended)
 2. Git clone this repository
 3. Install ngrok, go to dashboard to find api key
