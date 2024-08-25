@@ -67,7 +67,6 @@ numpy-stl==3.1.1
 nvidia-cuda-runtime-cu12==12.5.39
 nvidia-pyindex==1.0.9
 octorest==0.4
-open3d==0.18.0
 opencv-python==4.10.0.84
 packaging==24.1
 paramiko==3.4.0
