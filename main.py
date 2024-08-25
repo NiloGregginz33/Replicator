@@ -19,7 +19,6 @@ import pymeshlab
 from scipy.interpolate import splprep, splev
 import threading
 import logging
-import open3d as o3d
 import re
 import random
 import trimesh
