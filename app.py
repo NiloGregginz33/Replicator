@@ -312,7 +312,7 @@ def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0
         
         obj_path_1 = f'{prompt.replace(" ", "_")}_halfway.obj'
         bind_floating_parts(obj_path, halfway_gcode_path)
-        obj_to_gcode(halfway_gcode_path, gcode_path, prompt, slic3r_path, profile_path)
+        obj_to_gcode(halfway_gcode_path, gcode_path, prompt, profile_path)
         
         print(f"Saved G-code to {gcode_path}")
     
@@ -349,7 +349,7 @@ def scale_obj_file(input_filepath, output_filepath, scale_factor=60.0, target_si
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def obj_to_gcode(obj_file_path, output_gcode_path,  prompt, slic3r_path, profile_path, output_filename = "sliced_obj.obj"):
+def obj_to_gcode(obj_file_path, output_gcode_path,  prompt, profile_path, output_filename = "sliced_obj.obj"):
     slicer_path = create_path('slic3r', 'Slic3r.exe')
     prof_path = get_full_path('config.ini')
     ouput = os.path.join("gcodes", f"{prompt.replace(' ', '_')}.gcode")
