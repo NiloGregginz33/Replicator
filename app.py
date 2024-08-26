@@ -232,7 +232,6 @@ def wait_for_temperature(target_temp, target_bed_temp, timeout=420):
             if extruder_temp >= target_temp and bed_temp >= target_bed_temp:
                 print("Target temperatures reached.")
                 return True
-        time.sleep(5)
     print("Timeout reached before temperatures were met.")
     return False
     
@@ -246,7 +245,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0, render_mode='nerf', size=32):
+def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0, render_mode='stf', size=32):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(random.randint(0, 10000000))
     xm = load_model('transmitter', device=device)
@@ -487,7 +486,6 @@ def print_function(commands, ip=ip, port=port):
         print("Extruder and bed temperatures set successfully.")
     except requests.exceptions.RequestException as e:
         print(f"Failed to set temperatures: {e}")
-    time.sleep(10)
     get_temperature()
     if wait_for_temperature(229,99):
         thread = threading.Thread(target=send_gcode_batch, args=(ip, port, commands,))
