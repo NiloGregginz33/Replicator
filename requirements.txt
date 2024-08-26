@@ -8,7 +8,7 @@ cffi==1.16.0
 chardet==4.0.0
 charset-normalizer==3.3.2
 click==8.1.7
-clip @ git+https://github.com/openai/CLIP.git@dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1
+clip @ git+https://github.com/openai/CLIP.git
 colorama==0.4.6
 comm==0.2.2
 ConfigArgParse==1.7
@@ -96,7 +96,7 @@ rpds-py==0.19.0
 Rtree==1.2.0
 scikit-image==0.22.0
 scipy==1.13.1
--e git+https://github.com/openai/shap-e.git@50131012ee11c9d2617f3886c10f000d3c7a3b43#egg=shap_e
+-e git+https://github.com/openai/shap-e.git
 six==1.16.0
 SpeechRecognition==3.10.4
 stack-data==0.6.3
