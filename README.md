@@ -2,7 +2,7 @@
 This replicator was inspired by Star Trek and a desire to literally "speak" something into existence. The procedure on how to use this app is pretty straight forward. Note: Do Not Attempt with Filaments other than PLA without changing the appropriate temp config. Please install python 3.9/3.10 and git beforehand, and consider using a virtual environment if this is not your default python version.
 1. Root your 3D printer and install moonraker (fluidd is also recommended)
 2. Git clone this repository
-3. Install ngrok (after you cd into the cloned repository), go to dashboard to find api key, and run the ngrok config command (its on ur dash)
+3. Install ngrok (after you cd into the cloned repository), go to dashboard to find api key, and run the ngrok config command (its on ur dash).
 4. PIP COMMANDS (run seperately and in order): pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --upgrade --force-reinstall | pip install wheel | pip install -r requirements.txt
 5. python setup.py (use the api from step 3 as your input for the 2nd prompt)(DO NOT WORRY if program doesnt execute all the way, it has still done what it needs to)
 7. Set up config for ngrok (I believe it's ngrok start --config=config.yml example but i think you can also manually configure the config | you might need to open multiple terminals in this directory | When altering the config add subdomain: {your domain} under tunnels as well as your auth token which should go at the very top)
