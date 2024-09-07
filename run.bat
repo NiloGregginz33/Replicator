@@ -1,6 +1,6 @@
 @echo off
 start "Flask Server" cmd /k "flask run --host=0.0.0.0 --port=5000"
-start "Ngrok Tunnel" cmd /k "ngrok http 5000 --hostname=intensely-heroic-ape.ngrok-free.app"
+start "Ngrok Tunnel" cmd /k "ngrok http 5000 --hostname= <your hostname>"
 
 echo Press any key to terminate Flask and Ngrok...
 pause
