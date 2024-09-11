@@ -2,7 +2,7 @@
 This replicator was inspired by Star Trek and a desire to literally "speak" something into existence. The procedure on how to use this app is pretty straight forward. Note: Do Not Attempt with Filaments other than PLA without changing the appropriate temp config. You will almost definitely need a NVIDIA graphics card for cuda, cpu is not fast enough. Please install python 3.9/3.10 and git beforehand, and consider using a virtual environment if this is not your default python version.
 1. Root your 3D printer and install moonraker (fluidd is also recommended)
 2. Git clone this repository
-3. Install ngrok (after you cd into the cloned repository), go to dashboard to find api key, and run the ngrok config command (its on ur dash).
+3. Install ngrok and extract the exe into the Replicator folder(after you cd into the cloned repository), go to dashboard to find api key, and run the ngrok config command (its on ur dash).
 4. Copy ngrok to the Replicator folder
 5. PIP COMMANDS (run seperately and in order): pip install -r requirements.txt
 6. pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --upgrade --force-reinstall (use the appropriate cuda config)
