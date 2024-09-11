@@ -103,9 +103,6 @@ tbb==2021.12.0
 tenacity==8.5.0
 termcolor==2.4.0
 tifffile==2024.5.22
-torch==2.0.1+cu117
-torchaudio==2.0.2+cu117
-torchvision==0.15.2+cu117
 tqdm==4.66.4
 traitlets==5.14.3
 trimesh==4.4.1
