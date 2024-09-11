@@ -9,7 +9,7 @@ import json
 import subprocess
 import socket
 import trimesh
-from flask import Flask, request, jsonify, abort, Response, render_template, send_from_directory, session
+from flask import Flask, request, jsonify, abort, Response, render_template, send_from_directory, session, stream_with_context
 from flask_ngrok import run_with_ngrok
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -108,6 +108,26 @@ def authenticate():
         'You have to login with proper credentials', 401,
         {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
+def upload_gcode_file(printer_ip, file_path):
+    url = f"http://{ip}:7125/server/files/upload"
+    headers = {'Content-Type': 'application/octet-stream'}
+    
+    # Open the G-code file in binary mode
+    with open(file_path, 'rb') as gcode_file:
+        files = {'file': (file_path, gcode_file, 'application/octet-stream')}
+        
+        try:
+            # Send the POST request to upload the file
+            response = requests.post(url, files=files)
+            if response.status_code == 200:
+                print("G-code file uploaded successfully!")
+                print(response)
+                return response.json()  # Return the file info
+            else:
+                print(f"Failed to upload file. Status code: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred during file upload: {e}")
+            
 def create_path(subdirectory, filename):
     current_directory = os.getcwd()
     subdirectory_path = os.path.join(current_directory, subdirectory)
@@ -246,6 +266,7 @@ def set_seed(seed):
     
 def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0, render_mode='stf', size=32):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print("Device: ",device)
     set_seed(random.randint(0, 10000000))
     xm = load_model('transmitter', device=device)
     model = load_model('text300M', device=device)
@@ -406,7 +427,7 @@ def send_request_with_retries(url, headers=None, json=None, data=None, max_retri
             time.sleep(delay)
     raise requests.exceptions.RequestException(f"Failed to send request after {max_retries} attempts")
 
-def send_gcode_batch(printer_ip, port, commands, batch_size=10):
+def send_gcode_batch(printer_ip, port, commands, batch_size=40):
     responses = []
     url = f"http://{ip}:7125/printer/gcode/script"
     headers = {'Content-Type': 'application/json'}
@@ -423,8 +444,8 @@ def send_gcode_batch(printer_ip, port, commands, batch_size=10):
                 script="\n".join(batch)
                 json_data = {"script": script}
                 try:
-                    send_request_with_retries(url, headers=headers, json=json_data, max_retries=1)
-                    print("Sent batch: \n {script}")
+                    send_request_with_retries(url, headers=headers, json=json_data, max_retries=3)
+                    print(f"Sent batch: \n {script}")
                 except requests.exceptions.RequestException as e:
                     print("Failed batch: {e}")
 
@@ -456,7 +477,14 @@ def normalize_path(path):
     path_str = str(path)
     normalized_path = path_str.replace('\\', '/')   
     return normalized_path
+    
+def fallback_image(static_image_path):
+    with open(static_image_path, 'rb') as f:
+        image = f.read()
 
+    yield (b'--frame\r\n'
+           b'Content-Type: image/jpeg\r\n\r\n' + image + b'\r\n')
+           
 def convert_obj_to_stl(obj_filepath, stl_filepath):
     try:
         mesh = trimesh.load(obj_filepath)
@@ -465,17 +493,43 @@ def convert_obj_to_stl(obj_filepath, stl_filepath):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def gen_frames():
-    camera = cv2.VideoCapture(0)
-    while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        else:
+def gen_frames(static_url):
+    try:
+        # Try to open the camera using DirectShow
+        camera = cv2.VideoCapture(1)
+        if not camera.isOpened():
+            print("Error: Camera could not be opened.")
+            return fallback_image(static_url) # Stop if the camera cannot be opened
+
+        # Lower the resolution and frame rate to reduce load
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 240)  # Set width to 320
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)  # Set height to 240
+        camera.set(cv2.CAP_PROP_FPS, 15)  # Set FPS to 15
+
+        while True:
+            success, frame = camera.read()
+            if not success:
+                print("Error: Failed to capture image. Retrying...")
+                yield fallback_image(static_url)
+                continue  # Keep retrying if frame capture fails
+
+            # Encode the frame as JPEG
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
+
+            # Yield the frame to the client
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                   
+    except Exception as e:
+        # Catch any unexpected errors and log them
+        print(f"Error during video stream: {e}")
+    
+    finally:
+        # Ensure that the camera is released even if an error occurs
+        if camera and camera.isOpened():
+            camera.release()
+            print("Camera has been released.")
 
 def print_function(commands, ip=ip, port=port):
     base_url = f"http://{ip}:7125"
@@ -492,14 +546,31 @@ def print_function(commands, ip=ip, port=port):
         thread.join()
     else:
         print("printer failed to heat")
-    
+        
+def start_print_job(printer_ip, file_path):
+    url = f"http://{printer_ip}:7125/printer/print/start"
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "filename": file_path  # Path to the uploaded G-code file
+    }
+
+    try:
+        # Send the POST request to start the print
+        response = requests.post(url, headers=headers, json=payload)
+        if response.status_code == 200:
+            print("Print job started successfully!")
+        else:
+            print(f"Failed to start print job. Status code: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred when starting the print job: {e}")
+        
 def run_flask():
-    app.run(port=5000)
+    app.run(port=5000, debug=True)
     
 @app.route('/video_feed')
 @require_api_key
 def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(gen_frames('static/notfound.jpg'), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/get_status')
 @require_api_key
@@ -567,6 +638,13 @@ def generate_gcode_flask():
 
     def generate_gcode():        
         gcode_path = prompt_to_gcode(prompt, output_gcode_path)
+        try:
+            upload_gcode_file(ip, gcode_path)
+            upload_path = "/gcodes/" + prompt.replace(' ','_') + ".gcode"
+            start_print_job(ip,upload_path)
+        except:
+            print("Well, looks like we have to do this the old fashioned way")
+            
         commands = split_gcode_file(gcode_path, prompt)
         try:
             send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S260"})  # Set extruder temperature
