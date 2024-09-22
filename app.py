@@ -495,41 +495,31 @@ def convert_obj_to_stl(obj_filepath, stl_filepath):
 
 def gen_frames(static_url):
     try:
-        # Try to open the camera using DirectShow
         camera = cv2.VideoCapture(1)
         if not camera.isOpened():
             print("Error: Camera could not be opened.")
-            return fallback_image(static_url) # Stop if the camera cannot be opened
+            return fallback_image(static_url) 
 
-        # Lower the resolution and frame rate to reduce load
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 240)  # Set width to 320
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)  # Set height to 240
-        camera.set(cv2.CAP_PROP_FPS, 15)  # Set FPS to 15
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 240)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240) 
+        camera.set(cv2.CAP_PROP_FPS, 15) 
 
         while True:
             success, frame = camera.read()
             if not success:
                 print("Error: Failed to capture image. Retrying...")
                 yield fallback_image(static_url)
-                continue  # Keep retrying if frame capture fails
+                continue 
 
-            # Encode the frame as JPEG
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
 
-            # Yield the frame to the client
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                    
     except Exception as e:
-        # Catch any unexpected errors and log them
         print(f"Error during video stream: {e}")
     
-    finally:
-        # Ensure that the camera is released even if an error occurs
-        if camera and camera.isOpened():
-            camera.release()
-            print("Camera has been released.")
 
 def print_function(commands, ip=ip, port=port):
     base_url = f"http://{ip}:7125"
@@ -551,11 +541,10 @@ def start_print_job(printer_ip, file_path):
     url = f"http://{printer_ip}:7125/printer/print/start"
     headers = {'Content-Type': 'application/json'}
     payload = {
-        "filename": file_path  # Path to the uploaded G-code file
+        "filename": file_path 
     }
 
     try:
-        # Send the POST request to start the print
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
             print("Print job started successfully!")
