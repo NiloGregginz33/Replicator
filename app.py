@@ -19,6 +19,9 @@ import pymeshlab
 from scipy.interpolate import splprep, splev
 import threading
 import logging
+import queue
+import aiohttp
+import asyncio
 import re
 import random
 import trimesh
@@ -63,6 +66,9 @@ HEADERS = {'Content-Type': 'application/json'}
 port = 7125
 gcode_thread = None
 cancel_flag = threading.Event()
+PRINTER_URL = f"http://{ip}:7125/printer/gcode/script"
+
+batch_queue = queue.Queue()
 
 IMAGE_DIR = 'static\images'
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -87,6 +93,8 @@ logger = logging.getLogger(__name__)
 
 folder_name = "gcodes"
 
+prompt_name = None
+
 if not os.path.exists(folder_name):
     os.makedirs(folder_name)
     print(f"Folder '{folder_name}' created.")
@@ -98,7 +106,96 @@ if not os.path.exists(IMAGE_DIR):
     print(f"Folder '{IMAGE_DIR}' created.")
 else:
     print(f"Folder '{IMAGE_DIR}' already exists.")
+    
+async def send_gcode_batch_async(url, gcode_commands):
+    try:
+        async with aiohttp.ClientSession() as session:
+            for gcode in gcode_commands:
+                logging.info(f"Sending G-code: {gcode}")
+                async with session.post(url, data=gcode) as response:
+                    if response.status == 200:
+                        logging.info(f"Successfully sent: {gcode}")
+                    else:
+                        logging.warning(f"Failed to send: {gcode}, Status: {response.status}")
+                await asyncio.sleep(0.1)  # Delay between commands to avoid overloading the printer
+    except aiohttp.ClientError as e:
+        logging.error(f"HTTP Error while sending G-code batch: {e}")
 
+# Function to process the batch queue and send batches
+async def process_batch_queue():
+    while True:
+        if not batch_queue.empty():
+            gcode_batch = batch_queue.get()
+            if gcode_batch == "STOP":
+                break  # Exit the loop if a stop command is received
+            await send_gcode_batch_async(PRINTER_URL, gcode_batch)
+        else:
+            await asyncio.sleep(1) 
+
+def add_gcode_batch(gcode_commands):
+    batch_queue.put(gcode_commands)
+    logging.info(f"Added a batch of {len(gcode_commands)} commands to the queue.")
+
+def stop_processing():
+    batch_queue.put("STOP")
+
+def start_async_event_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(process_batch_queue())
+    loop.close()
+
+def upload_file(file_path):
+    if not os.path.exists(file_path):
+        print(f"File '{file_path}' not found!")
+        return None
+    
+    file_name = os.path.basename(file_path)
+    files = {'file': (file_name, open(file_path, 'rb'))}
+
+    response = requests.post(f"{MOONRAKER_IP}/server/files/upload", files=files)
+
+    if response.status_code == 201:
+        print(f"File '{file_name}' uploaded successfully.")
+        return file_name
+    else:
+        print(f"Error uploading file. Status code: {response.status_code}")
+        print(response.json())
+        return None
+
+def list_files():
+    response = requests.get(f"{MOONRAKER_IP}/server/files/list?root=gcodes")
+
+    if response.status_code == 200:
+        files = response.json() 
+        print("Files in 'gcodes' directory:")
+        for file in files:
+            print(file) 
+    else:
+        print(f"Error listing files. Status code: {response.status_code}")
+        print(response.json())
+
+def check_printer_status():
+    response = requests.get(f"{MOONRAKER_IP}/printer/info")
+
+    if response.status_code == 200:
+        status = response.json()
+        print("Printer Status:", status)
+    else:
+        print(f"Error fetching printer status. Status code: {response.status_code}")
+        print(response.json())
+
+def start_print(file_name):
+    data = {'filename': f"{file_name}"}
+
+    response = requests.post(f"{MOONRAKER_IP}/printer/print/start", json=data)
+
+    if response.status_code == 200:
+        print(f"Print started for '{file_name}'.")
+    else:
+        print(f"Error starting print. Status code: {response.status_code}")
+        print(response.json())
+        
 def check_auth(username, password):
     return username == USERNAME and password == PASSWORD
 
@@ -112,12 +209,10 @@ def upload_gcode_file(printer_ip, file_path):
     url = f"http://{ip}:7125/server/files/upload"
     headers = {'Content-Type': 'application/octet-stream'}
     
-    # Open the G-code file in binary mode
     with open(file_path, 'rb') as gcode_file:
         files = {'file': (file_path, gcode_file, 'application/octet-stream')}
         
         try:
-            # Send the POST request to upload the file
             response = requests.post(url, files=files)
             if response.status_code == 200:
                 print("G-code file uploaded successfully!")
@@ -273,6 +368,7 @@ def prompt_to_gcode(prompt, output_gcode_path, batch_size=1, guidance_scale=20.0
     diffusion = diffusion_from_config(load_config('diffusion'))
     slic3r_path = "prusa3d.exe"
     profile_path = "config.ini"
+    print("Creating model...")
 
     latents = sample_latents(
         batch_size=batch_size,
@@ -427,7 +523,7 @@ def send_request_with_retries(url, headers=None, json=None, data=None, max_retri
             time.sleep(delay)
     raise requests.exceptions.RequestException(f"Failed to send request after {max_retries} attempts")
 
-def send_gcode_batch(printer_ip, port, commands, batch_size=40):
+def send_gcode_batch(printer_ip, port, commands, batch_size=100):
     responses = []
     url = f"http://{ip}:7125/printer/gcode/script"
     headers = {'Content-Type': 'application/json'}
@@ -482,7 +578,7 @@ def fallback_image(static_image_path):
     with open(static_image_path, 'rb') as f:
         image = f.read()
 
-    yield (b'--frame\r\n'
+    return (b'--frame\r\n'
            b'Content-Type: image/jpeg\r\n\r\n' + image + b'\r\n')
            
 def convert_obj_to_stl(obj_filepath, stl_filepath):
@@ -495,37 +591,44 @@ def convert_obj_to_stl(obj_filepath, stl_filepath):
 
 def gen_frames(static_url):
     try:
-        camera = cv2.VideoCapture(1)
+        camera = cv2.VideoCapture(0)
+        time.sleep(1)
         if not camera.isOpened():
             print("Error: Camera could not be opened.")
-            return fallback_image(static_url) 
-
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 240)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240) 
-        camera.set(cv2.CAP_PROP_FPS, 15) 
+            return fallback_image(static_url)
 
         while True:
             success, frame = camera.read()
             if not success:
                 print("Error: Failed to capture image. Retrying...")
+                time.sleep(0.5)
                 yield fallback_image(static_url)
-                continue 
-
+                continue
+            else:
+                time.sleep(0.5)
+                
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
-
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                    
     except Exception as e:
         print(f"Error during video stream: {e}")
+        try:
+            camera.release()
+        except Exception as ee:
+            print(f"Error releasing stream: {ee}")
     
-
+    finally:
+        if camera and camera.isOpened():
+            camera.release()
+            print("Camera has been released.")
+            
 def print_function(commands, ip=ip, port=port):
     base_url = f"http://{ip}:7125"
     try:
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S230"})  # Set extruder temperature
-        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})  # Set bed temperature
+        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S230"}) 
+        send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})
         print("Extruder and bed temperatures set successfully.")
     except requests.exceptions.RequestException as e:
         print(f"Failed to set temperatures: {e}")
@@ -541,7 +644,7 @@ def start_print_job(printer_ip, file_path):
     url = f"http://{printer_ip}:7125/printer/print/start"
     headers = {'Content-Type': 'application/json'}
     payload = {
-        "filename": file_path 
+        "filename": file_path  
     }
 
     try:
@@ -564,7 +667,7 @@ def video_feed():
 @app.route('/get_status')
 @require_api_key
 def get_status():
-    return render_template('status.html', api_key=local_key)
+    return render_template('status.html', api_key=local_key, time=time)
 
 @app.route('/generation_status', methods=['GET'])
 @require_api_key
@@ -576,6 +679,7 @@ def get_generation_status():
     images = generation_status["images"]
     timestamp = int(time.time())
     image_paths = [f"{image}?timestamp={timestamp}" for image in images]
+    print(generation_status)
 
     return jsonify({"status": status, "images": image_paths})
 
@@ -627,23 +731,6 @@ def generate_gcode_flask():
 
     def generate_gcode():        
         gcode_path = prompt_to_gcode(prompt, output_gcode_path)
-        try:
-            upload_gcode_file(ip, gcode_path)
-            upload_path = "/gcodes/" + prompt.replace(' ','_') + ".gcode"
-            start_print_job(ip,upload_path)
-        except:
-            print("Well, looks like we have to do this the old fashioned way")
-            
-        commands = split_gcode_file(gcode_path, prompt)
-        try:
-            send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M104 S260"})  # Set extruder temperature
-            send_request_with_retries(f"{base_url}/printer/gcode/script", json={"script": "M140 S100"})  # Set bed temperature
-            print("Extruder and bed temperatures set successfully.")
-        except requests.exceptions.RequestException as e:
-            print(f"Failed to set temperatures: {e}")
-
-        time.sleep(2)
-        get_temperature()
         initial_commands = [
             "G21 ; Set units to millimeters",
             "M82 ; Use absolute mode for extrusion",
@@ -656,14 +743,24 @@ def generate_gcode_flask():
             "G1 E10 F100 ; Prime the extruder"
         ]
         
-        full_commands = initial_commands + commands
-        for command in full_commands:
+        for command in initial_commands:
             if cancel_flag.is_set():
                 print("Cancellation requested. Stopping G-code generation.")
                 generation_status["status"] = "cancelled"
                 break
             print_function([command])
+            
+        gcode_string = 'gcodes/' + f'{output_gcode_path}'
 
+        gcode_filename = upload_file(gcode_string)
+        
+        if gcode_filename:
+            list_files()
+            check_printer_status()
+            start_print(gcode_filename)
+                        
+        time.sleep(2)
+        get_temperature()
         generation_status["status"] = "completed"
             
     cancel_flag.clear()
