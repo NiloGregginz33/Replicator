@@ -14,3 +14,5 @@ This replicator was inspired by Star Trek and a desire to literally "speak" some
 ![image_shortcut_2](https://github.com/user-attachments/assets/196af37f-f867-4e2e-a896-56ec7d034796)
 ![image_shortcut_3](https://github.com/user-attachments/assets/7a0cd613-c1ec-403c-9e41-8bd48687fe28)
 
+DEMONSTRATION:
+https://youtu.be/igk_CU6cQNQ
